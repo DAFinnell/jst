@@ -1,0 +1,25 @@
+openapi: 3.1.0
+info:
+  title: JST API
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Check if backend responds
+      responses:
+        "200":
+          description: The backend is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
