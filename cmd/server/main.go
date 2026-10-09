@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -38,6 +39,14 @@ func run(ctx context.Context) error {
 		dataDir = "data"
 	}
 
+	webDir := os.Getenv("JST_WEB_DIR")
+	if webDir != "" {
+		info, err := os.Stat(filepath.Join(webDir, "index.html"))
+		if err != nil || info.IsDir() {
+			return fmt.Errorf("frontend index.html is missing from %q", webDir)
+		}
+	}
+
 	startupCtx, cancelStartup := context.WithTimeout(ctx, 10*time.Second)
 	db, err := storage.Open(startupCtx, dataDir)
 	cancelStartup()
@@ -48,7 +57,7 @@ func run(ctx context.Context) error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewRouter(),
+		Handler:           httpapi.NewRouter(db, webDir),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
