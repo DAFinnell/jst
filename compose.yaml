@@ -1,0 +1,29 @@
+services:
+  jst:
+    build: .
+    user: "${JST_UID:-501}:${JST_GID:-20}"
+    init: true
+    environment:
+      JST_ADDR: "0.0.0.0:8080"
+      JST_DATA_DIR: "/data"
+      JST_WEB_DIR: "/app/web"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - type: bind
+        source: ./data
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - --fail
+        - --silent
+        - http://127.0.0.1:8080/api/v1/health
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 15s
