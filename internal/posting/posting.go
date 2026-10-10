@@ -26,6 +26,30 @@ type ValidatedInput struct {
 	NormalizedURL string
 }
 
+type Posting struct {
+	ValidatedInput
+	ID        int64
+	Source    string
+	CreatedAt string
+	UpdatedAt string
+}
+
+type Summary struct {
+	ID                   int64
+	Company              string
+	Title                string
+	Location             *string
+	EmploymentType       *string
+	WorkplaceArrangement *string
+}
+
+const FilterUnknown = "unknown"
+
+type ListOptions struct {
+	Query                string
+	EmploymentType       string
+	WorkplaceArrangement string
+}
 type ValidationErrors map[string]string
 
 func (e ValidationErrors) Error() string {
