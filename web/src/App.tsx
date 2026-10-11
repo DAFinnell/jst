@@ -1,70 +1,107 @@
-import { useEffect, useState } from 'react'
-import { getHealth } from './api/health'
+import {
+  Link,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router'
+import EditPostingPage from './pages/EditPostingPage'
+import NewPostingPage from './pages/NewPostingPage'
+import PostingDetailPage from './pages/PostingDetailPage'
+import PostingsPage from './pages/PostingsPage'
+import StatusPage from './pages/StatusPage'
 
-type ConnectionStatus = 'loading' | 'connected' | 'error'
+function navigationClass({ isActive }: { isActive: boolean }) {
+  const base =
+    'rounded-lg px-3 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900'
+
+  return `${base} ${isActive
+    ? 'bg-slate-900 text-white'
+    : 'text-slate-700 hover:bg-slate-100'
+    }`
+}
 
 function App() {
-  const [status, setStatus] = useState<ConnectionStatus>('loading')
-  const [attempt, setAttempt] = useState(0)
-
-  useEffect(() => {
-    const controller = new AbortController
-
-    void getHealth(controller.signal)
-      .then(() => {
-        if (!controller.signal.aborted) {
-          setStatus('connected')
-        }
-      })
-        .catch(() => {
-        if (!controller.signal.aborted) {
-          setStatus('error')
-        }
-      })
-
-    return () => controller.abort()
-  }, [attempt])
-
-  function retry() {
-    setStatus('loading')
-    setAttempt((current) => current + 1)
-  }
-
-  const message = {
-    loading: 'Checking connection...',
-    connected: 'Backend connected.',
-    error: 'Unable to connect. Try again.',
-  }[status]
+  const { pathname } = useLocation()
+  const isCapturePage = pathname === '/postings/new'
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-50 p-6 font-sans text-slate-900">
-      <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-3xl font-semibold">JST</h1>
-        <p className="mt-2 text-slate-600">Job Search Tracker</p>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 p-6">
+          <p className="text-xl font-semibold">JST</p>
 
-        <p
-          aria-live="polite"
-          className={`mt-8 font-medium ${
-            status === 'error' ? 'text-red-700' : 'text-slate-700'
-          }`}
-        >
-          {message}
-        </p>
+          <nav
+            aria-label="Main navigation"
+            className="flex flex-wrap gap-2"
+          >
+            <NavLink
+              to="/postings"
+              end={isCapturePage}
+              className={navigationClass}
+            >
+              Postings
+            </NavLink>
 
-        <button
-          type="button"
-          onClick={retry}
-          disabled={status === 'loading'}
-          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-wait disabled:opacity-50"
-        >
-          {status === 'loading'
-            ? 'Checking...'
-            : status === 'error'
-              ? 'Retry'
-              : 'Check again'}
-        </button>
-      </section>
-    </main>
+            <NavLink
+              to="/postings/new"
+              end
+              className={navigationClass}
+            >
+              Add posting
+            </NavLink>
+
+            <NavLink
+              to="/status"
+              end
+              className={navigationClass}
+            >
+              Status
+            </NavLink>
+          </nav>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl p-6">
+        <Routes>
+          <Route
+            path="/"
+            element={<Navigate to="/postings" replace />}
+          />
+          <Route path="/postings" element={<PostingsPage />} />
+          <Route path="/postings/new" element={<NewPostingPage />} />
+          <Route
+            path="/postings/:id"
+            element={<PostingDetailPage />}
+          />
+          <Route
+            path="/postings/:id/edit"
+            element={<EditPostingPage />}
+          />
+          <Route path="/status" element={<StatusPage />} />
+          <Route
+            path="*"
+            element={
+              <section className="space-y-4">
+                <h1 className="text-3xl font-semibold">
+                  Page not found
+                </h1>
+                <p className="text-slate-600">
+                  This page does not exist.
+                </p>
+                <Link
+                  to="/postings"
+                  className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                >
+                  Back to postings
+                </Link>
+              </section>
+            }
+          />
+        </Routes>
+      </main>
+    </div>
   )
 }
 

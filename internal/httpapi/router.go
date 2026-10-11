@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/DAFinnell/jst/internal/posting"
 )
 
 type healthResponse struct {
@@ -14,8 +16,10 @@ type healthResponse struct {
 }
 
 type apiError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code              string            `json:"code"`
+	Message           string            `json:"message"`
+	FieldErrors       map[string]string `json:"field_errors,omitempty"`
+	ExistingPostingID int64             `json:"existing_posting_id,omitempty"`
 }
 
 type errorResponse struct {
@@ -24,6 +28,27 @@ type errorResponse struct {
 
 func NewRouter(db *sql.DB, webDir string) http.Handler {
 	api := http.NewServeMux()
+
+	postings := postingHandler{store: posting.NewStore(db)}
+
+	api.HandleFunc("GET /api/v1/postings", postings.list)
+	api.HandleFunc("POST /api/v1/postings", postings.create)
+
+	api.HandleFunc("GET /api/v1/postings/{id}", postings.get)
+	api.HandleFunc("PUT /api/v1/postings/{id}", postings.update)
+	api.HandleFunc("DELETE /api/v1/postings/{id}", postings.remove)
+
+	api.HandleFunc("/api/v1/postings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "GET, HEAD, POST")
+		writeError(w, http.StatusMethodNotAllowed,
+			"method_not_allowed", "Method is not allowed.")
+	})
+
+	api.HandleFunc("/api/v1/postings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "GET, HEAD, PUT, DELETE")
+		writeError(w, http.StatusMethodNotAllowed,
+			"method_not_allowed", "Method is not allowed.")
+	})
 
 	api.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -58,6 +83,28 @@ func NewRouter(db *sql.DB, webDir string) http.Handler {
 	} else {
 		files := http.FileServer(http.Dir(webDir))
 
+		frontend := http.NewServeMux()
+
+		servePage := func(w http.ResponseWriter, r *http.Request) {
+			indexRequest := r.Clone(r.Context())
+			indexRequest.URL.Path = "/"
+			indexRequest.URL.RawPath = ""
+			files.ServeHTTP(w, indexRequest)
+		}
+
+		for _, pattern := range []string{
+			"/{$}",
+			"/postings",
+			"/postings/new",
+			"/postings/{id}",
+			"/postings/{id}/edit",
+			"/status",
+		} {
+			frontend.HandleFunc(pattern, servePage)
+		}
+
+		frontend.Handle("/", files)
+
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				w.Header().Set("Allow", "GET, HEAD")
@@ -66,7 +113,7 @@ func NewRouter(db *sql.DB, webDir string) http.Handler {
 				return
 			}
 
-			files.ServeHTTP(w, r)
+			frontend.ServeHTTP(w, r)
 		})
 	}
 
