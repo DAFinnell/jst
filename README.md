@@ -10,7 +10,8 @@ mkdir -p data
 docker compose up --build --wait
 ```
 
-Check http://127.0.0.1:8080 - confirm the health page shows backend up.
+Open http://127.0.0.1:8080 — it redirects to the Postings page.
+Open http://127.0.0.1:8080/status to check the backend connection.
 
 ```sh
 docker compose down
@@ -32,6 +33,8 @@ npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5173.
+Open http://127.0.0.1:5173 — it redirects to the Postings page.
+Open http://127.0.0.1:5173/status to check the backend connection.
+Vite handles unknown page URLs through the frontend during development. Verify server 404 responses using the Compose application.
 
 Run either the native backend or the Compose application at a time.

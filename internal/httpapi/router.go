@@ -83,6 +83,28 @@ func NewRouter(db *sql.DB, webDir string) http.Handler {
 	} else {
 		files := http.FileServer(http.Dir(webDir))
 
+		frontend := http.NewServeMux()
+
+		servePage := func(w http.ResponseWriter, r *http.Request) {
+			indexRequest := r.Clone(r.Context())
+			indexRequest.URL.Path = "/"
+			indexRequest.URL.RawPath = ""
+			files.ServeHTTP(w, indexRequest)
+		}
+
+		for _, pattern := range []string{
+			"/{$}",
+			"/postings",
+			"/postings/new",
+			"/postings/{id}",
+			"/postings/{id}/edit",
+			"/status",
+		} {
+			frontend.HandleFunc(pattern, servePage)
+		}
+
+		frontend.Handle("/", files)
+
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				w.Header().Set("Allow", "GET, HEAD")
@@ -91,7 +113,7 @@ func NewRouter(db *sql.DB, webDir string) http.Handler {
 				return
 			}
 
-			files.ServeHTTP(w, r)
+			frontend.ServeHTTP(w, r)
 		})
 	}
 
