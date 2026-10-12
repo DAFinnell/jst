@@ -1,20 +1,30 @@
-import { Link } from 'react-router'
+import { useNavigate } from 'react-router'
+import { createPosting } from '../api/postings'
+import PostingForm from '../components/PostingForm'
 
 export default function NewPostingPage() {
+  const navigate = useNavigate()
+
   return (
     <section className="space-y-4">
-      <h1 className="text-3xl font-semibold">Add Posting</h1>
+      <h1 className="text-3xl font-semibold">
+        Add Posting
+      </h1>
 
       <p className="text-slate-600">
-        Posting form will go here.
+        Input the info from a posting.
+        Required fields are marked.
       </p>
 
-      <Link
-        to="/postings"
-        className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-      >
-        Back to Postings
-      </Link>
+      <PostingForm
+        onSave={createPosting}
+        onSaved={(posting) =>
+          navigate(`/postings/${posting.id}`, {
+            replace: true,
+          })
+        }
+        onCancel={() => navigate('/postings')}
+      />
     </section>
   )
 }

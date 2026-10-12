@@ -19,6 +19,29 @@ export type Posting = PostingSummary & {
   updated_at: string
 }
 
+export type PostingInput = Pick<
+  Posting,
+  | 'company'
+  | 'title'
+  | 'url'
+  | 'description'
+  | 'location'
+  | 'employment_type'
+  | 'workplace_arrangement'
+>
+
+export type PostingFieldErrors = Partial<
+  Record<keyof PostingInput, string>
+>
+
+type PostingErrorResponse = {
+  error?: {
+    code?: string
+    field_errors?: PostingFieldErrors
+    existing_posting_id?: number
+  }
+}
+
 type PostingListResponse = {
   items: PostingSummary[]
 }
@@ -26,20 +49,31 @@ type PostingListResponse = {
 export class PostingAPIError extends Error {
   readonly status: number
   readonly code: string | undefined
+  readonly fieldErrors: PostingFieldErrors | undefined
+  readonly existingPostingId: number | undefined
 
-  constructor(status: number, code?: string) {
+  constructor(
+    status: number,
+    code?: string,
+    fieldErrors?: PostingFieldErrors,
+    existingPostingId?: number,
+  ) {
     super(`Posting request failed (${status}).`)
     this.name = 'PostingAPIError'
     this.status = status
     this.code = code
+    this.fieldErrors = fieldErrors
+    this.existingPostingId = existingPostingId
   }
 }
 
-async function readPostingJSON<T>(
+async function requestPostingJSON<T>(
   path: string,
   signal: AbortSignal,
+  options: RequestInit = {}
 ): Promise<T> {
   const response = await fetch(path, {
+    ...options,
     signal: AbortSignal.any([
       signal,
       AbortSignal.timeout(5000)
@@ -47,19 +81,23 @@ async function readPostingJSON<T>(
   })
 
   if (!response.ok) {
-    let code: string | undefined
+    let details: PostingErrorResponse['error']
 
     try {
-      const body = (await response.json()) as {
-        error?: { code?: string }
-      }
+      const body =
+        (await response.json()) as PostingErrorResponse
 
-      code = body.error?.code
+      details = body.error
     } catch {
       // Keep HTTP status even if body isn't JSON.
     }
 
-    throw new PostingAPIError(response.status, code)
+    throw new PostingAPIError(
+      response.status,
+      details?.code,
+      details?.field_errors,
+      details?.existing_posting_id,
+    )
   }
 
   return response.json() as Promise<T>
@@ -68,10 +106,11 @@ async function readPostingJSON<T>(
 export async function getPostings(
   signal: AbortSignal,
 ): Promise<PostingSummary[]> {
-  const response = await readPostingJSON<PostingListResponse>(
-    '/api/v1/postings',
-    signal,
-  )
+  const response =
+    await requestPostingJSON<PostingListResponse>(
+      '/api/v1/postings',
+      signal,
+    )
 
   return response.items
 }
@@ -80,8 +119,25 @@ export function getPosting(
   id: string,
   signal: AbortSignal,
 ): Promise<Posting> {
-  return readPostingJSON<Posting>(
+  return requestPostingJSON<Posting>(
     `/api/v1/postings/${encodeURIComponent(id)}`,
     signal,
+  )
+}
+
+export function createPosting(
+  input: PostingInput,
+  signal: AbortSignal,
+): Promise<Posting> {
+  return requestPostingJSON<Posting>(
+    '/api/v1/postings',
+    signal,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
   )
 }
