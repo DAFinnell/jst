@@ -141,3 +141,21 @@ export function createPosting(
     },
   )
 }
+
+export function updatePosting(
+  id: string,
+  input: PostingInput,
+  signal: AbortSignal,
+): Promise<Posting> {
+  return requestPostingJSON<Posting>(
+    `/api/v1/postings/${encodeURIComponent(id)}`,
+    signal,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
+  )
+}
