@@ -20,6 +20,7 @@ type PostingFormProps = {
   ) => Promise<Posting>
   onSaved: (posting: Posting) => void
   onCancel: () => void
+  onMissing?: () => void
 }
 
 type FormFeedback = {
@@ -170,6 +171,7 @@ export default function PostingForm({
   onSave,
   onSaved,
   onCancel,
+  onMissing,
 }: PostingFormProps) {
   const [values, setValues] = useState<PostingInput>(() => ({
     ...(initialValues ?? emptyInput),
@@ -178,6 +180,7 @@ export default function PostingForm({
     fieldErrors: {},
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isMissing, setIsMissing] = useState(false)
   const [focusTarget, setFocusTarget] =
     useState<FocusTarget | null>(null)
 
@@ -280,7 +283,7 @@ export default function PostingForm({
   ) {
     event.preventDefault()
 
-    if (activeRequest.current) {
+    if (activeRequest.current || isMissing) {
       return
     }
 
@@ -317,6 +320,22 @@ export default function PostingForm({
       }
 
       if (error instanceof PostingAPIError) {
+        if (
+          onMissing &&
+          error.status === 404 &&
+          error.code === 'not_found'
+        ) {
+          setIsMissing(true)
+          setFeedback({
+            fieldErrors: {},
+            message:
+              'This posting no longer exists. Your changes weren’t saved.'
+          })
+          setFocusTarget({ field: 'general' })
+          onMissing()
+          return
+        }
+
         if (
           error.status === 400 &&
           error.code === 'validation_failed' &&
@@ -381,6 +400,17 @@ export default function PostingForm({
           {hasFieldErrors
             ? 'Check the highlighted fields.'
             : feedback.message}
+
+          {isMissing && (
+            <p className="mt-2">
+              <Link
+                to="/postings"
+                className="inline-block font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+              >
+                Back to postings
+              </Link>
+            </p>
+          )}
         </div>
       )}
 
@@ -541,6 +571,7 @@ export default function PostingForm({
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
+            disabled={isMissing}
             className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-wait disabled:opacity-60"
           >
             {isSubmitting ? 'Saving…' : 'Save'}
