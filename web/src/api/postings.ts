@@ -67,11 +67,11 @@ export class PostingAPIError extends Error {
   }
 }
 
-async function requestPostingJSON<T>(
+async function requestPosting(
   path: string,
   signal: AbortSignal,
   options: RequestInit = {}
-): Promise<T> {
+): Promise<Response> {
   const response = await fetch(path, {
     ...options,
     signal: AbortSignal.any([
@@ -99,6 +99,16 @@ async function requestPostingJSON<T>(
       details?.existing_posting_id,
     )
   }
+
+  return response
+}
+
+async function requestPostingJSON<T>(
+  path: string,
+  signal: AbortSignal,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await requestPosting(path, signal, options)
 
   return response.json() as Promise<T>
 }
@@ -157,5 +167,16 @@ export function updatePosting(
       },
       body: JSON.stringify(input),
     },
+  )
+}
+
+export async function deletePosting(
+  id: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await requestPosting(
+    `/api/v1/postings/${encodeURIComponent(id)}`,
+    signal,
+    { method: 'DELETE' }
   )
 }
