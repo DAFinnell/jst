@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams
+} from 'react-router'
 import {
   deletePosting,
   getPosting,
@@ -11,6 +16,10 @@ import {
   formatPostingDate,
   workplaceArrangementLabel,
 } from '../postingDisplay'
+import {
+  postingQuerySuffix,
+  readPostingQuery,
+} from '../postingQuery'
 
 type PostingDetailState =
   | { status: 'loading' }
@@ -33,9 +42,11 @@ type DeletionFocusTarget =
 
 function PostingDetails({
   id,
+  querySuffix,
   onRetry,
 }: {
   id: string | undefined
+  querySuffix: string
   onRetry: () => void
 }) {
   const [state, setState] = useState<PostingDetailState>(() =>
@@ -82,6 +93,7 @@ function PostingDetails({
     return (
       <PostingInformation
         posting={state.posting}
+        querySuffix={querySuffix}
         onMissing={() => setState({ status: 'missing' })}
         onReload={onRetry}
       />
@@ -123,10 +135,12 @@ function PostingDetails({
 
 function PostingInformation({
   posting,
+  querySuffix,
   onMissing,
   onReload,
 }: {
   posting: Posting
+  querySuffix: string
   onMissing: () => void
   onReload: () => void
 }) {
@@ -180,7 +194,9 @@ function PostingInformation({
       await deletePosting(String(posting.id), controller.signal)
 
       if (!controller.signal.aborted) {
-        navigate('/postings', { replace: true })
+        navigate(`/postings${querySuffix}`, {
+          replace: true
+        })
       }
     } catch (error: unknown) {
       if (controller.signal.aborted) {
@@ -224,7 +240,7 @@ function PostingInformation({
           </span>
         ) : (
           <Link
-            to={`/postings/${posting.id}/edit`}
+            to={`/postings/${posting.id}/edit${querySuffix}`}
             className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
           >
             Edit posting
@@ -404,6 +420,10 @@ function PostingInformation({
 
 export default function PostingDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [params] = useSearchParams()
+  const querySuffix = postingQuerySuffix(
+    readPostingQuery(params),
+  )
   const [attempt, setAttempt] = useState(0)
 
   return (
@@ -411,11 +431,12 @@ export default function PostingDetailPage() {
       <PostingDetails
         key={`${id ?? ''}:${attempt}`}
         id={id}
+        querySuffix={querySuffix}
         onRetry={() => setAttempt((current) => current + 1)}
       />
 
       <Link
-        to="/postings"
+        to={`/postings${querySuffix}`}
         className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
       >
         Back to postings

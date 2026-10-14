@@ -1,3 +1,6 @@
+import { postingQuerySuffix } from '../postingQuery'
+import type { PostingQuery } from '../postingQuery'
+
 export type EmploymentType = 'full_time' | 'other'
 
 export type WorkplaceArrangement = 'remote' | 'hybrid' | 'on_site'
@@ -115,10 +118,11 @@ async function requestPostingJSON<T>(
 
 export async function getPostings(
   signal: AbortSignal,
+  query: PostingQuery,
 ): Promise<PostingSummary[]> {
   const response =
     await requestPostingJSON<PostingListResponse>(
-      '/api/v1/postings',
+      `/api/v1/postings${postingQuerySuffix(query)}`,
       signal,
     )
 
