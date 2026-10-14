@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams
+} from 'react-router'
 import {
   getPosting,
   PostingAPIError,
@@ -7,6 +12,10 @@ import {
 } from '../api/postings'
 import type { Posting, PostingInput } from '../api/postings'
 import PostingForm from '../components/PostingForm'
+import {
+  postingQuerySuffix,
+  readPostingQuery,
+} from '../postingQuery'
 
 type EditPostingState =
   | { status: 'loading' }
@@ -17,9 +26,11 @@ type EditPostingState =
 
 function PostingEditor({
   id,
+  querySuffix,
   onRetry,
 }: {
   id: string | undefined
+  querySuffix: string
   onRetry: () => void
 }) {
   const [state, setState] = useState<EditPostingState>(() =>
@@ -69,7 +80,12 @@ function PostingEditor({
   }, [id])
 
   if (state.status === 'success') {
-    return <PostingEditingForm posting={state.posting} />
+    return (
+      <PostingEditingForm
+        posting={state.posting}
+        querySuffix={querySuffix}
+      />
+    )
   }
 
   const message = {
@@ -105,7 +121,7 @@ function PostingEditor({
       )}
 
       <Link
-        to="/postings"
+        to={`/postings${querySuffix}`}
         className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
       >
         Back to postings
@@ -116,8 +132,10 @@ function PostingEditor({
 
 function PostingEditingForm({
   posting,
+  querySuffix,
 }: {
   posting: Posting
+  querySuffix: string
 }) {
   const navigate = useNavigate()
   const [isMissing, setIsMissing] = useState(false)
@@ -150,14 +168,16 @@ function PostingEditingForm({
           updatePosting(String(posting.id), input, signal)
         }
         onSaved={(saved) =>
-          navigate(`/postings/${saved.id}`, {
+          navigate(`/postings/${saved.id}${querySuffix}`, {
             replace: true,
           })
         }
         onMissing={() => setIsMissing(true)}
         onCancel={() =>
           navigate(
-            isMissing ? '/postings' : `/postings/${posting.id}`,
+            isMissing
+              ? `/postings${querySuffix}`
+              : `/postings/${posting.id}${querySuffix}`,
             { replace: true },
           )
         }
@@ -168,6 +188,10 @@ function PostingEditingForm({
 
 export default function EditPostingPage() {
   const { id } = useParams<{ id: string }>()
+  const [params] = useSearchParams()
+  const querySuffix = postingQuerySuffix(
+    readPostingQuery(params),
+  )
   const [attempt, setAttempt] = useState(0)
 
   return (
@@ -175,6 +199,7 @@ export default function EditPostingPage() {
       <PostingEditor
         key={`${id ?? ''}:${attempt}`}
         id={id}
+        querySuffix={querySuffix}
         onRetry={() => setAttempt((current) => current + 1)}
       />
     </section>

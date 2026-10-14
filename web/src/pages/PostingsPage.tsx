@@ -281,7 +281,7 @@ export default function PostingsPage() {
           >
             <option value="">All</option>
             <option value="full_time">Full-time</option>
-            <option value="Unknown">Unknown</option>
+            <option value="unknown">Unknown</option>
             <option value="other">Other</option>
           </select>
         </label>

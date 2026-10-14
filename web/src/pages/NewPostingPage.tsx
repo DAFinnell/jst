@@ -1,9 +1,17 @@
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { createPosting } from '../api/postings'
 import PostingForm from '../components/PostingForm'
+import {
+  postingQuerySuffix,
+  readPostingQuery,
+} from '../postingQuery'
 
 export default function NewPostingPage() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const querySuffix = postingQuerySuffix(
+    readPostingQuery(params),
+  )
 
   return (
     <section className="space-y-4">
@@ -19,11 +27,13 @@ export default function NewPostingPage() {
       <PostingForm
         onSave={createPosting}
         onSaved={(posting) =>
-          navigate(`/postings/${posting.id}`, {
+          navigate(`/postings/${posting.id}${querySuffix}`, {
             replace: true,
           })
         }
-        onCancel={() => navigate('/postings')}
+        onCancel={() =>
+          navigate(`/postings${querySuffix}`)
+        }
       />
     </section>
   )

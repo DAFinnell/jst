@@ -122,7 +122,7 @@ export async function getPostings(
 ): Promise<PostingSummary[]> {
   const response =
     await requestPostingJSON<PostingListResponse>(
-      '/api/v1/postings${postingQuerySuffix(query)}',
+      `/api/v1/postings${postingQuerySuffix(query)}`,
       signal,
     )
 
