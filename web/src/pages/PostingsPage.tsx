@@ -1,18 +1,38 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import {
+  Link,
+  useLocation,
+  useNavigationType,
+  useSearchParams,
+} from 'react-router'
 import { getPostings } from '../api/postings'
 import type { PostingSummary } from '../api/postings'
 import {
   employmentTypeLabel,
   workplaceArrangementLabel,
 } from '../postingDisplay'
+import {
+  postingQueryParams,
+  postingQuerySuffix,
+  readPostingQuery,
+} from '../postingQuery'
+import type { PostingQuery } from '../postingQuery'
+
+const queryControlClass =
+  'w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700'
 
 type PostingListState =
   | { status: 'loading' }
   | { status: 'success'; items: PostingSummary[] }
   | { status: 'error' }
 
-function PostingList({ onRetry }: { onRetry: () => void }) {
+function PostingList({
+  querySuffix,
+  onRetry
+}: {
+  querySuffix: string
+  onRetry: () => void
+}) {
   const [state, setState] = useState<PostingListState>({
     status: 'loading',
   })
@@ -20,7 +40,11 @@ function PostingList({ onRetry }: { onRetry: () => void }) {
   useEffect(() => {
     const controller = new AbortController()
 
-    void getPostings(controller.signal)
+    const query = readPostingQuery(
+      new URLSearchParams(querySuffix),
+    )
+
+    void getPostings(controller.signal, query)
       .then((items) => {
         if (!controller.signal.aborted) {
           setState({ status: 'success', items })
@@ -33,7 +57,7 @@ function PostingList({ onRetry }: { onRetry: () => void }) {
       })
 
     return () => controller.abort()
-  }, [])
+  }, [querySuffix])
 
   if (state.status === 'loading') {
     return <p role="status">Loading postings...</p>
@@ -59,15 +83,28 @@ function PostingList({ onRetry }: { onRetry: () => void }) {
   if (state.items.length === 0) {
     return (
       <p role="status" className="text-slate-600">
-        No postings saved yet.
+        {querySuffix
+          ? 'No postings match your search and filters.'
+          : 'No postings have been added yet.'}
       </p>
     )
   }
 
-  return <PostingsTable items={state.items} />
+  return (
+    <PostingsTable
+      items={state.items}
+      querySuffix={querySuffix}
+    />
+  )
 }
 
-function PostingsTable({ items }: { items: PostingSummary[] }) {
+function PostingsTable({
+  items,
+  querySuffix,
+}: {
+  items: PostingSummary[]
+  querySuffix: string
+}) {
   return (
     <div
       role="region"
@@ -110,7 +147,7 @@ function PostingsTable({ items }: { items: PostingSummary[] }) {
 
               <td className="wrap-anywhere px-4 py-3">
                 <Link
-                  to={`/postings/${posting.id}`}
+                  to={`/postings/${posting.id}${querySuffix}`}
                   className="font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                 >
                   {posting.title}
@@ -137,7 +174,46 @@ function PostingsTable({ items }: { items: PostingSummary[] }) {
 }
 
 export default function PostingsPage() {
+  const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  const navigationType = useNavigationType()
+  const query = readPostingQuery(params)
+  const querySuffix = postingQuerySuffix(query)
   const [attempt, setAttempt] = useState(0)
+
+  const [draft, setDraft] = useState(() => ({
+    locationKey: location.key,
+    appliedSearch: query.q,
+    text: query.q,
+  }))
+
+  if (draft.locationKey !== location.key) {
+    const restoreSearch =
+      navigationType === 'POP' ||
+      draft.appliedSearch !== query.q
+
+    setDraft({
+      locationKey: location.key,
+      appliedSearch: query.q,
+      text: restoreSearch ? query.q : draft.text,
+    })
+  }
+
+  function applyQuery(
+    next: PostingQuery,
+    keepDraft = false,
+  ) {
+    if (!keepDraft) {
+      setDraft({
+        ...draft,
+        text: next.q.trim(),
+      })
+    }
+
+    if (postingQuerySuffix(next) !== querySuffix) {
+      setParams(postingQueryParams(next))
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -145,15 +221,116 @@ export default function PostingsPage() {
         <h1 className="text-3xl font-semibold">Postings</h1>
 
         <Link
-          to="/postings/new"
+          to={`/postings/new${querySuffix}`}
           className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
         >
           Add posting
         </Link>
       </div>
 
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          applyQuery({ ...query, q: draft.text })
+        }}
+        className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+      >
+        <div className="flex min-w-0 items-end gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-sm font-medium">Search</span>
+            <input
+              type="search"
+              name="q"
+              value={draft.text}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  text: event.target.value,
+                })
+              }
+              className={queryControlClass}
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+          >
+            Search
+          </button>
+        </div>
+
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-medium">
+            Employment type
+          </span>
+          <select
+            name="employment_type"
+            value={query.employment_type}
+            onChange={(event) =>
+              applyQuery(
+                {
+                  ...query,
+                  employment_type: event.target
+                    .value as PostingQuery['employment_type'],
+                },
+                true,
+              )
+            }
+            className={queryControlClass}
+          >
+            <option value="">All</option>
+            <option value="full_time">Full-time</option>
+            <option value="Unknown">Unknown</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-medium">
+            Workplace arrangement
+          </span>
+          <select
+            name="workplace_arrangement"
+            value={query.workplace_arrangement}
+            onChange={(event) =>
+              applyQuery(
+                {
+                  ...query,
+                  workplace_arrangement: event.target
+                    .value as PostingQuery['workplace_arrangement'],
+                },
+                true,
+              )
+            }
+            className={queryControlClass}
+          >
+            <option value="">All</option>
+            <option value="remote">Remote</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="on_site">On-site</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </label>
+
+        <button
+          type="button"
+          onClick={() =>
+            applyQuery({
+              q: '',
+              employment_type: '',
+              workplace_arrangement: '',
+            })
+          }
+          className="justify-self-start rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+        >
+          Clear
+        </button>
+      </form>
+
       <PostingList
-        key={attempt}
+        key={`${querySuffix}:${attempt}`}
+        querySuffix={querySuffix}
         onRetry={() => setAttempt((current) => current + 1)}
       />
     </section>
