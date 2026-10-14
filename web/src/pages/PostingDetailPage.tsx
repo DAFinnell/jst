@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { getPosting, PostingAPIError } from '../api/postings'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
+import {
+  deletePosting,
+  getPosting,
+  PostingAPIError,
+} from '../api/postings'
 import type { Posting } from '../api/postings'
 import {
   employmentTypeLabel,
@@ -14,6 +18,18 @@ type PostingDetailState =
   | { status: 'invalid' }
   | { status: 'missing' }
   | { status: 'error' }
+
+type DeletionState =
+  | 'idle'
+  | 'confirming'
+  | 'deleting'
+  | 'error'
+
+type DeletionFocusTarget =
+  | 'cancel'
+  | 'delete'
+  | 'feedback'
+  | null
 
 function PostingDetails({
   id,
@@ -63,7 +79,13 @@ function PostingDetails({
   }, [id])
 
   if (state.status === 'success') {
-    return <PostingInformation posting={state.posting} />
+    return (
+      <PostingInformation
+        posting={state.posting}
+        onMissing={() => setState({ status: 'missing' })}
+        onReload={onRetry}
+      />
+    )
   }
 
   const message = {
@@ -99,7 +121,90 @@ function PostingDetails({
   )
 }
 
-function PostingInformation({ posting }: { posting: Posting }) {
+function PostingInformation({
+  posting,
+  onMissing,
+  onReload,
+}: {
+  posting: Posting
+  onMissing: () => void
+  onReload: () => void
+}) {
+  const navigate = useNavigate()
+  const [deletion, setDeletion] =
+    useState<DeletionState>('idle')
+  const [focusTarget, setFocusTarget] =
+    useState<DeletionFocusTarget>(null)
+
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const feedbackRef = useRef<HTMLDivElement>(null)
+  const activeRequest = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    return () => activeRequest.current?.abort()
+  }, [])
+
+  useEffect(() => {
+    if (focusTarget === 'cancel') {
+      cancelButtonRef.current?.focus()
+    } else if (focusTarget === 'delete') {
+      deleteButtonRef.current?.focus()
+    } else if (focusTarget === 'feedback') {
+      feedbackRef.current?.focus()
+    }
+  }, [focusTarget])
+
+
+  function openConfirmation() {
+    setDeletion('confirming')
+    setFocusTarget('cancel')
+  }
+
+  function cancelConfirmation() {
+    setDeletion('idle')
+    setFocusTarget('delete')
+  }
+
+  async function handleDelete() {
+    if (deletion !== 'confirming' || activeRequest.current) {
+      return
+    }
+
+    const controller = new AbortController()
+    activeRequest.current = controller
+    setDeletion('deleting')
+    setFocusTarget('feedback')
+
+    try {
+      await deletePosting(String(posting.id), controller.signal)
+
+      if (!controller.signal.aborted) {
+        navigate('/postings', { replace: true })
+      }
+    } catch (error: unknown) {
+      if (controller.signal.aborted) {
+        return
+      }
+
+      if (
+        error instanceof PostingAPIError &&
+        error.status === 404 &&
+        error.code === 'not_found'
+      ) {
+        onMissing()
+        return
+      }
+
+      setDeletion('error')
+      setFocusTarget('feedback')
+    } finally {
+      if (activeRequest.current === controller) {
+        activeRequest.current = null
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -112,12 +217,105 @@ function PostingInformation({ posting }: { posting: Posting }) {
         </p>
       </div>
 
-      <Link
-        to={`/postings/${posting.id}/edit`}
-        className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-      >
-        Edit posting
-      </Link>
+      <div className="flex flex-wrap items-center gap-4">
+        {deletion === 'deleting' ? (
+          <span className="font-medium text-slate-500">
+            Edit posting
+          </span>
+        ) : (
+          <Link
+            to={`/postings/${posting.id}/edit`}
+            className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+          >
+            Edit posting
+          </Link>
+        )}
+
+        <button
+          ref={deleteButtonRef}
+          type="button"
+          onClick={openConfirmation}
+          disabled={deletion !== 'idle'}
+          aria-expanded={deletion !== 'idle'}
+          aria-controls={
+            deletion === 'idle'
+              ? undefined
+              : 'posting-delete-confirmation'
+          }
+          className="rounded-lg border border-red-300 bg-white px-4 py-2 font-medium text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-60"
+        >
+          Delete posting
+        </button>
+      </div>
+
+      {deletion !== 'idle' && (
+        <section
+          id="posting-delete-confirmation"
+          aria-labelledby="posting-delete-heading"
+          className="space-y-4 rounded-lg border border-red-300 bg-red-50 p-5"
+        >
+          <h2
+            id="posting-delete-heading"
+            className="text-lg font-semibold"
+          >
+            Delete posting?
+          </h2>
+
+          <p className="wrap-anywhere">
+            Permanently delete <strong>{posting.title}</strong>
+            {' '}at <strong>{posting.company}</strong>?
+            This cannot be undone.
+          </p>
+
+          {(deletion === 'deleting' || deletion === 'error') && (
+            <div
+              ref={feedbackRef}
+              role={deletion === 'error' ? 'alert' : 'status'}
+              tabIndex={-1}
+              className="text-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700"
+            >
+              {deletion === 'deleting'
+                ? 'Deleting posting…'
+                : 'Could not confirm deletion. Reload this posting to check whether it still exists before trying again.'}
+            </div>
+          )}
+
+          {deletion === 'error' ? (
+            <button
+              type="button"
+              onClick={onReload}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+            >
+              Reload posting
+            </button>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              <button
+                ref={cancelButtonRef}
+                type="button"
+                onClick={cancelConfirmation}
+                disabled={deletion === 'deleting'}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void handleDelete()
+                }}
+                disabled={deletion === 'deleting'}
+                className="rounded-lg bg-red-700 px-4 py-2 font-medium text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-60"
+              >
+                {deletion === 'deleting'
+                  ? 'Deleting…'
+                  : 'Delete permanently'}
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <dl className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
         <div>
