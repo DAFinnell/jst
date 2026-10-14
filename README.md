@@ -1,5 +1,5 @@
 # JST - Job Search Tool
-A local job search tool for aggregating postings, application preparation, and tracking status/outcomes.
+A local job search tool for aggregating postings, application preparation, and tracking status/outcomes. Postings are in, the rest will follow.
 
 ## Run with Docker
 Requires Docker Desktop w/ Docker Compose.
