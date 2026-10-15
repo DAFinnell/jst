@@ -504,6 +504,129 @@ func TestStoreMissingRecordsAndDeletion(t *testing.T) {
 	requirePostingIDs(t, store, ListOptions{})
 }
 
+func TestStoreTrackingSurvivesSourceEditAndCascadesOnDelete(t *testing.T) {
+	ctx := context.Background()
+	store, db := openPostingStore(t)
+
+	target := createTestPosting(t, store, validInput())
+
+	otherInput := validInput()
+	otherInput.URL = "https://example.com/jobs/tracking-control"
+	other := createTestPosting(t, store, otherInput)
+
+	const stamp = "2026-10-14T12:00:00.000Z"
+
+	for _, id := range []int64{target.ID, other.ID} {
+		if _, err := db.Exec(`
+			INSERT INTO posting_tracking (
+				posting_id, stage, application_date,
+				created_at, updated_at
+			) VALUES (?, 'applied', '2026-10-12', ?, ?)
+		`, id, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := db.Exec(`
+			INSERT INTO posting_stage_history (
+				posting_id, from_stage, to_stage, changed_at
+			) VALUES
+				(?, NULL, 'inbox', ?),
+				(?, 'inbox', 'applied', ?)
+		`, id, stamp, id, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assertCount := func(want int, query string, args ...any) {
+		t.Helper()
+
+		var got int
+		if err := db.QueryRow(query, args...).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s: got %d, want %d", query, got, want)
+		}
+	}
+
+	assertPersonalData := func(id int64) {
+		t.Helper()
+
+		assertCount(1, `
+			SELECT COUNT(*)
+			FROM posting_tracking
+			WHERE posting_id = ?
+			  AND stage = 'applied'
+			  AND application_date = '2026-10-12'
+			  AND created_at = ?
+			  AND updated_at = ?
+		`, id, stamp, stamp)
+
+		assertCount(2, `
+			SELECT COUNT(*)
+			FROM posting_stage_history
+			WHERE posting_id = ?
+		`, id)
+
+		assertCount(1, `
+			SELECT COUNT(*)
+			FROM posting_stage_history
+			WHERE posting_id = ?
+			  AND from_stage IS NULL
+			  AND to_stage = 'inbox'
+			  AND changed_at = ?
+		`, id, stamp)
+
+		assertCount(1, `
+			SELECT COUNT(*)
+			FROM posting_stage_history
+			WHERE posting_id = ?
+			  AND from_stage = 'inbox'
+			  AND to_stage = 'applied'
+			  AND changed_at = ?
+		`, id, stamp)
+	}
+
+	input := target.Input
+	input.Title = "Updated source title"
+
+	updated, err := store.Update(ctx, target.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != input.Title {
+		t.Fatal("source title was not updated")
+	}
+
+	assertPersonalData(target.ID)
+	assertPersonalData(other.ID)
+
+	if err := store.Delete(ctx, target.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, target.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted posting error = %v, want ErrNotFound", err)
+	}
+
+	assertCount(0, `
+		SELECT COUNT(*) FROM posting_tracking WHERE posting_id = ?
+	`, target.ID)
+	assertCount(0, `
+		SELECT COUNT(*) FROM posting_stage_history WHERE posting_id = ?
+	`, target.ID)
+
+	requirePostingIDs(t, store, ListOptions{}, other.ID)
+	assertPersonalData(other.ID)
+
+	persistedOther, err := store.Get(ctx, other.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(persistedOther, other) {
+		t.Fatal("another posting changed during edit or deletion")
+	}
+}
+
 func TestStoreListingSearchAndFilters(t *testing.T) {
 	ctx := context.Background()
 	store, db := openPostingStore(t)
