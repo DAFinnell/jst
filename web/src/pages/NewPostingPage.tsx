@@ -25,6 +25,7 @@ export default function NewPostingPage() {
       </p>
 
       <PostingForm
+        mode="capture"
         onSave={createPosting}
         onSaved={(posting) =>
           navigate(`/postings/${posting.id}${querySuffix}`, {

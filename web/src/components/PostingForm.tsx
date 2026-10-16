@@ -1,27 +1,55 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode, SubmitEvent } from 'react'
 import { Link } from 'react-router'
-import { PostingAPIError } from '../api/postings'
+import {
+  isPostingStage,
+  PostingAPIError,
+  postingStages,
+} from '../api/postings'
 import type {
   EmploymentType,
   Posting,
+  PostingCaptureInput,
   PostingFieldErrors,
   PostingInput,
+  PostingStage,
   WorkplaceArrangement,
 } from '../api/postings'
+import {
+  localToday,
+  postingStageLabel,
+} from '../postingDisplay'
 
-type PostingField = keyof PostingInput
+type SourceField = keyof PostingInput
 
-type PostingFormProps = {
+type PostingField =
+  | SourceField
+  | 'initial_stage'
+  | 'application_date'
+
+type CommonPostingFormProps = {
   initialValues?: PostingInput
-  onSave: (
-    input: PostingInput,
-    signal: AbortSignal,
-  ) => Promise<Posting>
   onSaved: (posting: Posting) => void
   onCancel: () => void
   onMissing?: () => void
 }
+
+type PostingFormProps = CommonPostingFormProps & (
+  | {
+    mode: 'capture'
+    onSave: (
+      input: PostingCaptureInput,
+      signal: AbortSignal,
+    ) => Promise<Posting>
+  }
+  | {
+    mode?: 'edit'
+    onSave: (
+      input: PostingInput,
+      signal: AbortSignal,
+    ) => Promise<Posting>
+  }
+)
 
 type FormFeedback = {
   fieldErrors: PostingFieldErrors
@@ -51,6 +79,8 @@ const fieldOrder: PostingField[] = [
   'employment_type',
   'workplace_arrangement',
   'description',
+  'initial_stage',
+  'application_date',
 ]
 
 const fieldHints: Partial<Record<PostingField, string>> = {
@@ -59,6 +89,9 @@ const fieldHints: Partial<Record<PostingField, string>> = {
   employment_type: 'Choose unknown if unclear. Other includes contract/part-time roles.',
   workplace_arrangement: 'Choose unknown if unclear.',
   description: 'Paste the description as plain text.',
+  initial_stage: 'Closed includes skipped or withdrawn opportunities.',
+  application_date:
+    'Applied suggests today until you change or clear this date.',
 }
 
 function validateInput(
@@ -166,15 +199,21 @@ function Field({
   )
 }
 
-export default function PostingForm({
-  initialValues,
-  onSave,
-  onSaved,
-  onCancel,
-  onMissing,
-}: PostingFormProps) {
+export default function PostingForm(props: PostingFormProps) {
+  const {
+    initialValues,
+    onSaved,
+    onCancel,
+    onMissing,
+  } = props
+  const isCapture = props.mode === 'capture'
   const [values, setValues] = useState<PostingInput>(() => ({
     ...(initialValues ?? emptyInput),
+  }))
+  const [capture, setCapture] = useState(() => ({
+    stage: 'applied' as PostingStage,
+    date: localToday(),
+    dateTouched: false,
   }))
   const [feedback, setFeedback] = useState<FormFeedback>({
     fieldErrors: {},
@@ -212,7 +251,7 @@ export default function PostingForm({
     }
   }, [focusTarget])
 
-  function changeField<K extends PostingField>(
+  function changeField<K extends SourceField>(
     field: K,
     value: PostingInput[K],
   ) {
@@ -234,6 +273,40 @@ export default function PostingForm({
             : current.existingPostingId,
       }
     })
+  }
+
+  function clearCaptureErrors() {
+    setFeedback((current) => {
+      const fieldErrors = { ...current.fieldErrors }
+      delete fieldErrors.initial_stage
+      delete fieldErrors.application_date
+
+      return { ...current, fieldErrors }
+    })
+  }
+
+  function changeInitialStage(stage: PostingStage) {
+    setCapture((current) => ({
+      ...current,
+      stage,
+      date: current.dateTouched
+        ? current.date
+        : stage === 'applied'
+          ? localToday()
+          : '',
+    }))
+
+    clearCaptureErrors()
+  }
+
+  function changeApplicationDate(date: string) {
+    setCapture((current) => ({
+      ...current,
+      date,
+      dateTouched: true,
+    }))
+
+    clearCaptureErrors()
   }
 
   function showFieldErrors(
@@ -289,6 +362,19 @@ export default function PostingForm({
 
     const fieldErrors = validateInput(values)
 
+    if (props.mode === 'capture') {
+      const dateControl =
+        formRef.current?.elements.namedItem('application_date')
+
+      if (
+        dateControl instanceof HTMLInputElement &&
+        !dateControl.validity.valid
+      ) {
+        fieldErrors.application_date =
+          'Enter a complete, valid date or clear it.'
+      }
+    }
+
     if (Object.keys(fieldErrors).length > 0) {
       showFieldErrors(fieldErrors)
       return
@@ -309,7 +395,16 @@ export default function PostingForm({
     setIsSubmitting(true)
 
     try {
-      const saved = await onSave(input, controller.signal)
+      const saved = props.mode === 'capture'
+        ? await props.onSave(
+          {
+            ...input,
+            initial_stage: capture.stage,
+            application_date: capture.date || null,
+          },
+          controller.signal,
+        )
+        : await props.onSave(input, controller.signal)
 
       if (!controller.signal.aborted) {
         onSaved(saved)
@@ -567,6 +662,63 @@ export default function PostingForm({
             }
           />
         </Field>
+
+        {isCapture && (
+          <section
+            aria-labelledby="capture-tracking-heading"
+            className="space-y-4 rounded-lg border border-slate-200 p-4"
+          >
+            <h2
+              id="capture-tracking-heading"
+              className="text-xl font-semibold"
+            >
+              Application tracking
+            </h2>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field
+                field="initial_stage"
+                label="Stage"
+                required
+                error={feedback.fieldErrors.initial_stage}
+              >
+                <select
+                  {...controlProps('initial_stage')}
+                  required
+                  value={capture.stage}
+                  onChange={(event) => {
+                    const stage = event.target.value
+
+                    if (isPostingStage(stage)) {
+                      changeInitialStage(stage)
+                    }
+                  }}
+                >
+                  {postingStages.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {postingStageLabel(stage)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field
+                field="application_date"
+                label="Application date"
+                error={feedback.fieldErrors.application_date}
+              >
+                <input
+                  {...controlProps('application_date')}
+                  type="date"
+                  value={capture.date}
+                  onChange={(event) =>
+                    changeApplicationDate(event.target.value)
+                  }
+                />
+              </Field>
+            </div>
+          </section>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <button

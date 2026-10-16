@@ -1,5 +1,6 @@
 import type {
   EmploymentType,
+  PostingStage,
   WorkplaceArrangement,
 } from './api/postings'
 
@@ -37,4 +38,50 @@ export function workplaceArrangementLabel(
 
 export function formatPostingDate(value: string): string {
   return dateFormatter.format(new Date(value))
+}
+
+const stageLabels: Record<PostingStage, string> = {
+  inbox: 'Inbox',
+  applied: 'Applied',
+  interviewing: 'Interviewing',
+  offer: 'Offer',
+  rejected: 'Rejected',
+  closed: 'Closed',
+}
+
+const applicationDateFormatter = new Intl.DateTimeFormat(
+  undefined,
+  {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  },
+)
+
+export function postingStageLabel(
+  stage: PostingStage,
+): string {
+  return stageLabels[stage]
+}
+
+export function localToday(): string {
+  const today = new Date()
+  const year = String(today.getFullYear()).padStart(4, '0')
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+export function formatApplicationDate(
+  value: string | null,
+): string {
+  if (value === null) {
+    return 'Not set'
+  }
+
+  return applicationDateFormatter.format(
+    new Date(`${value}T00:00:00Z`),
+  )
 }

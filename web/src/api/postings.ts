@@ -5,7 +5,24 @@ export type EmploymentType = 'full_time' | 'other'
 
 export type WorkplaceArrangement = 'remote' | 'hybrid' | 'on_site'
 
-export type PostingSummary = {
+export const postingStages = [
+  'inbox',
+  'applied',
+  'interviewing',
+  'offer',
+  'rejected',
+  'closed',
+] as const
+
+export type PostingStage = (typeof postingStages)[number]
+
+export function isPostingStage(
+  value: string | null,
+): value is PostingStage {
+  return postingStages.some((stage) => stage === value)
+}
+
+type PostingFields = {
   id: number
   company: string
   title: string
@@ -14,7 +31,11 @@ export type PostingSummary = {
   workplace_arrangement: WorkplaceArrangement | null
 }
 
-export type Posting = PostingSummary & {
+export type PostingSummary = PostingFields & {
+  stage: PostingStage
+}
+
+export type Posting = PostingFields & {
   url: string
   description: string
   source: 'manual'
@@ -33,8 +54,40 @@ export type PostingInput = Pick<
   | 'workplace_arrangement'
 >
 
+export type PostingCaptureInput = PostingInput & {
+  initial_stage: PostingStage
+  application_date: string | null
+}
+
+export type PostingStageEvent = {
+  id: number
+  from_stage: PostingStage | null
+  to_stage: PostingStage
+  changed_at: string
+}
+
+export type PostingTrackingData = {
+  posting_id: number
+  stage: PostingStage
+  application_date: string | null
+  created_at: string | null
+  updated_at: string | null
+  history: PostingStageEvent[]
+}
+
+export type PostingTrackingPatch = {
+  stage?: PostingStage
+  application_date?: string | null
+}
+
 export type PostingFieldErrors = Partial<
-  Record<keyof PostingInput, string>
+  Record<
+    | keyof PostingInput
+    | 'initial_stage'
+    | 'stage'
+    | 'application_date',
+    string
+  >
 >
 
 type PostingErrorResponse = {
@@ -140,7 +193,7 @@ export function getPosting(
 }
 
 export function createPosting(
-  input: PostingInput,
+  input: PostingCaptureInput,
   signal: AbortSignal,
 ): Promise<Posting> {
   return requestPostingJSON<Posting>(
@@ -182,5 +235,33 @@ export async function deletePosting(
     `/api/v1/postings/${encodeURIComponent(id)}`,
     signal,
     { method: 'DELETE' }
+  )
+}
+
+export function getPostingTracking(
+  id: string,
+  signal: AbortSignal,
+): Promise<PostingTrackingData> {
+  return requestPostingJSON<PostingTrackingData>(
+    `/api/v1/postings/${encodeURIComponent(id)}/tracking`,
+    signal,
+  )
+}
+
+export function patchPostingTracking(
+  id: string,
+  input: PostingTrackingPatch,
+  signal: AbortSignal,
+): Promise<PostingTrackingData> {
+  return requestPostingJSON<PostingTrackingData>(
+    `/api/v1/postings/${encodeURIComponent(id)}/tracking`,
+    signal,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    },
   )
 }
