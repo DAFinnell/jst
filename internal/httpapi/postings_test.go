@@ -479,7 +479,7 @@ func TestPostingHTTPList(t *testing.T) {
 
 	wantKeys := []string{
 		"id", "company", "title", "location",
-		"employment_type", "workplace_arrangement",
+		"employment_type", "workplace_arrangement", "stage",
 	}
 	for _, item := range raw.Items {
 		if len(item) != len(wantKeys) {

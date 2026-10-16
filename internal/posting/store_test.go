@@ -174,6 +174,7 @@ func TestStoreCreateGetAndReopen(t *testing.T) {
 		Location:             stringPointer("Boston, MA"),
 		EmploymentType:       stringPointer(EmploymentFullTime),
 		WorkplaceArrangement: stringPointer(WorkplaceRemote),
+		Stage:                StageInbox,
 	}}
 
 	if !reflect.DeepEqual(items, wantItems) {
@@ -816,8 +817,9 @@ func TestStoreClassifiesDatabaseUniqueConflict(t *testing.T) {
 		t.Fatal("database accepted a duplicate normalized URL")
 	}
 
-	err := store.classifyWriteError(
+	err := classifyWriteError(
 		ctx,
+		db,
 		writeErr,
 		original.NormalizedURL,
 		0,
