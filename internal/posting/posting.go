@@ -41,6 +41,7 @@ type Summary struct {
 	Location             *string
 	EmploymentType       *string
 	WorkplaceArrangement *string
+	Stage                string
 }
 
 const FilterUnknown = "unknown"
@@ -49,6 +50,7 @@ type ListOptions struct {
 	Query                string
 	EmploymentType       string
 	WorkplaceArrangement string
+	Stage                string
 }
 type ValidationErrors map[string]string
 

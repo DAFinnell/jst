@@ -61,14 +61,19 @@ func scanPosting(row rowScanner) (Posting, error) {
 	return result, nil
 }
 
-func (s *Store) checkDuplicate(
+type postingQueryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func checkDuplicate(
 	ctx context.Context,
+	q postingQueryer,
 	normalizedURL string,
 	excludeID int64,
 ) error {
 	var existingID int64
 
-	err := s.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT id
 		FROM postings
 		WHERE normalized_url = ? AND id <> ?
@@ -84,8 +89,9 @@ func (s *Store) checkDuplicate(
 	return &DuplicateURLError{ExistingPostingID: existingID}
 }
 
-func (s *Store) classifyWriteError(
+func classifyWriteError(
 	ctx context.Context,
+	q postingQueryer,
 	writeErr error,
 	normalizedURL string,
 	excludeId int64,
@@ -94,7 +100,7 @@ func (s *Store) classifyWriteError(
 
 	if errors.As(writeErr, &sqliteErr) &&
 		sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE {
-		if err := s.checkDuplicate(ctx, normalizedURL, excludeId); err != nil {
+		if err := checkDuplicate(ctx, q, normalizedURL, excludeId); err != nil {
 			return err
 		}
 	}
@@ -102,17 +108,16 @@ func (s *Store) classifyWriteError(
 	return writeErr
 }
 
-func (s *Store) Create(ctx context.Context, input Input) (Posting, error) {
-	validated, err := Validate(input)
-	if err != nil {
-		return Posting{}, err
-	}
-
-	if err := s.checkDuplicate(ctx, validated.NormalizedURL, 0); err != nil {
+func createPosting(
+	ctx context.Context,
+	q postingQueryer,
+	validated ValidatedInput,
+) (Posting, error) {
+	if err := checkDuplicate(ctx, q, validated.NormalizedURL, 0); err != nil {
 		return Posting{}, fmt.Errorf("create posting: %w", err)
 	}
 
-	result, err := scanPosting(s.db.QueryRowContext(ctx, `
+	result, err := scanPosting(q.QueryRowContext(ctx, `
 		INSERT INTO postings (
 			company, title, url, normalized_url, description,
 			location, employment_type, workplace_arrangement
@@ -130,11 +135,20 @@ func (s *Store) Create(ctx context.Context, input Input) (Posting, error) {
 	if err != nil {
 		return Posting{}, fmt.Errorf(
 			"create posting: %w",
-			s.classifyWriteError(ctx, err, validated.NormalizedURL, 0),
+			classifyWriteError(ctx, q, err, validated.NormalizedURL, 0),
 		)
 	}
 
 	return result, nil
+}
+
+func (s *Store) Create(ctx context.Context, input Input) (Posting, error) {
+	validated, err := Validate(input)
+	if err != nil {
+		return Posting{}, err
+	}
+
+	return createPosting(ctx, s.db, validated)
 }
 
 func (s *Store) Get(ctx context.Context, id int64) (Posting, error) {
@@ -168,7 +182,7 @@ func (s *Store) Update(
 		return Posting{}, fmt.Errorf("update posting: %w", err)
 	}
 
-	if err := s.checkDuplicate(ctx, validated.NormalizedURL, id); err != nil {
+	if err := checkDuplicate(ctx, s.db, validated.NormalizedURL, id); err != nil {
 		return Posting{}, fmt.Errorf("update posting: %w", err)
 	}
 
@@ -202,7 +216,7 @@ func (s *Store) Update(
 	if err != nil {
 		return Posting{}, fmt.Errorf(
 			"update posting: %w",
-			s.classifyWriteError(ctx, err, validated.NormalizedURL, id),
+			classifyWriteError(ctx, s.db, err, validated.NormalizedURL, id),
 		)
 	}
 
@@ -245,6 +259,11 @@ func validateListOptions(options ListOptions) error {
 			"Choose All, Remote, Hybrid, On-site, or Unknown."
 	}
 
+	if options.Stage != "" && !validStage(options.Stage) {
+		fieldErrors["stage"] =
+			"Choose All, Inbox, Applied, Interviewing, Offer, Rejected, or Closed."
+	}
+
 	if len(fieldErrors) > 0 {
 		return fieldErrors
 	}
@@ -261,9 +280,11 @@ func (s *Store) List(
 	}
 
 	query := `
-		SELECT id, company, title, location,
-			employment_type, workplace_arrangement
-		FROM postings
+		SELECT p.id, p.company, p.title, p.location,
+			p.employment_type, p.workplace_arrangement,
+			COALESCE(t.stage, 'inbox')
+		FROM postings AS p
+		LEFT JOIN posting_tracking AS t ON t.posting_id = p.id
 		WHERE 1=1
 	`
 
@@ -299,7 +320,12 @@ func (s *Store) List(
 		args = append(args, options.WorkplaceArrangement)
 	}
 
-	query += " ORDER BY created_at DESC, id DESC"
+	if options.Stage != "" {
+		query += " AND COALESCE(t.stage, 'inbox') = ?"
+		args = append(args, options.Stage)
+	}
+
+	query += " ORDER BY p.created_at DESC, p.id DESC"
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -319,6 +345,7 @@ func (s *Store) List(
 			&item.Location,
 			&item.EmploymentType,
 			&item.WorkplaceArrangement,
+			&item.Stage,
 		); err != nil {
 			return nil, fmt.Errorf("scan posting summary: %w", err)
 		}

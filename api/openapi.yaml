@@ -38,7 +38,7 @@ paths:
         Search matches literal substrings in company, title, or description.
         Surrounding search whitespace is trimmed. ASCII matching is case-insensitive.
         Percent signs and underscores are ordinary search characters.
-        Search and category filters combine. No pagination metadata is returned.
+        Search, category, and stage filters combine. No pagination metadata is returned.
       parameters:
         - name: q
           in: query
@@ -57,6 +57,14 @@ paths:
             type: string
             enum: ["", unknown, remote, hybrid, on_site]
           description: Omitted or empty means All; unknown selects null values.
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum: ["", inbox, applied, interviewing, offer, rejected, closed]
+          description: |
+            Omitted or empty means All. Inbox includes postings without
+            a saved tracking record. Filtering does not create tracking.
       responses:
         "200":
           description: Matching summaries; items is an empty array when nothing matches.
@@ -75,7 +83,7 @@ paths:
       operationId: createPosting
       summary: Capture a manual posting
       requestBody:
-        $ref: "#/components/requestBodies/PostingSave"
+        $ref: "#/components/requestBodies/PostingCapture"
       responses:
         "201":
           description: The saved posting.
@@ -134,6 +142,8 @@ paths:
         Replaces all editable fields. Omitted optional fields become null.
         Preserves ID, source, and creation time, and refreshes modification time.
         Editing excludes the current posting from duplicate URL comparison.
+        Preserves personal tracking and stage history. Capture and tracking
+        fields are not accepted by this source-edit endpoint.
       requestBody:
         $ref: "#/components/requestBodies/PostingSave"
       responses:
@@ -163,6 +173,7 @@ paths:
     delete:
       operationId: deletePosting
       summary: Permanently delete a posting
+      description: Also removes its personal tracking record and stage history.
       responses:
         "204":
           description: The posting was deleted; the response has no body.
@@ -174,6 +185,82 @@ paths:
           $ref: "#/components/responses/NotFound"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/postings/{id}/tracking:
+    parameters:
+      - $ref: "#/components/parameters/PostingID"
+
+    get:
+      operationId: getPostingTracking
+      summary: Read personal tracking and ordered stage history
+      description: |
+        An existing untracked posting returns inbox, null application date
+        and personal timestamps, and empty history without creating records.
+        A missing posting returns not_found. Current values and history are
+        read in one transaction. History is ordered by increasing event ID.
+      responses:
+        "200":
+          $ref: "#/components/responses/TrackingResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      operationId: updatePostingTracking
+      summary: Change personal stage or application date
+      description: |
+        Omitted fields preserve existing values. For the first personal save,
+        omitted values resolve to inbox and no application date. A supplied
+        date sets/corrects it; null clears it. Dates are independent of stage.
+        First saves create a starting event with null from_stage, including
+        a date-only first save at inbox. Later different stages append an
+        event; jumps and backward changes are allowed. Same-stage and date-only
+        saves add no further event. Actual stage/date changes refresh personal
+        updated_at; identical saves retain it. Tracking and history commit
+        together without changing any posting source field or source timestamp.
+        History timestamps are automatic UTC values, not client-supplied dates.
+      requestBody:
+        required: true
+        description: |
+          One JSON object, no larger than 1 MiB (1048576 bytes).
+          Supply at least one supported field. Unknown fields, invalid field
+          types, and additional JSON values are rejected.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackingPatch"
+            examples:
+              changeStage:
+                value:
+                  stage: interviewing
+              setDate:
+                value:
+                  application_date: "2026-10-12"
+              clearDate:
+                value:
+                  application_date: null
+      responses:
+        "200":
+          $ref: "#/components/responses/TrackingResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
         "500":
           $ref: "#/components/responses/InternalError"
 components:
@@ -188,6 +275,27 @@ components:
         minimum: 1
 
   requestBodies:
+    PostingCapture:
+      required: true
+      description: |
+        One JSON object, no larger than 1 MiB (1048576 bytes).
+        Unknown fields and additional JSON values are rejected.
+        Omitted initial_stage defaults to applied; null is invalid.
+        Omitted or null application_date stores no date; the server does not
+        choose today's date. Posting, tracking, and the starting event save
+        together. The response retains the existing posting shape.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CaptureInput"
+          example:
+            company: Example Company
+            title: Junior Developer
+            url: https://example.com/jobs/123
+            description: Example job description.
+            initial_stage: applied
+            application_date: "2026-10-12"
+
     PostingSave:
       required: true
       description: |
@@ -211,6 +319,13 @@ components:
             workplace_arrangement: remote
 
   responses:
+    TrackingResult:
+      description: Current personal tracking and ordered stage history.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Tracking"
+
     BadRequest:
       description: |
         validation_failed includes all applicable field_errors.
@@ -264,6 +379,7 @@ components:
             enum:
               - GET, HEAD, POST
               - GET, HEAD, PUT, DELETE
+              - GET, HEAD, PATCH
       content:
         application/json:
           schema:
@@ -339,6 +455,105 @@ components:
               format: int64
               minimum: 1
               description: The existing posting responsible for a URL conflict.
+    Stage:
+      type: string
+      enum: [inbox, applied, interviewing, offer, rejected, closed]
+
+    ApplicationDate:
+      type: [string, "null"]
+      format: date
+      description: Real YYYY-MM-DD calendar date, independent of event timestamps.
+
+    TrackingPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        stage:
+          $ref: "#/components/schemas/Stage"
+          description: Omit to preserve the stage; null is invalid.
+        application_date:
+          $ref: "#/components/schemas/ApplicationDate"
+          description: Omit to preserve, supply a date to set/correct, or use null to clear.
+
+    CaptureInput:
+      type: object
+      additionalProperties: false
+      required: [company, title, url, description]
+      properties:
+        company:
+          $ref: "#/components/schemas/PostingInput/properties/company"
+        title:
+          $ref: "#/components/schemas/PostingInput/properties/title"
+        url:
+          $ref: "#/components/schemas/PostingInput/properties/url"
+        description:
+          $ref: "#/components/schemas/PostingInput/properties/description"
+        location:
+          $ref: "#/components/schemas/PostingInput/properties/location"
+        employment_type:
+          $ref: "#/components/schemas/PostingInput/properties/employment_type"
+        workplace_arrangement:
+          $ref: "#/components/schemas/PostingInput/properties/workplace_arrangement"
+        initial_stage:
+          $ref: "#/components/schemas/Stage"
+          default: applied
+          description: Initial saved stage; omission defaults to applied and null is invalid.
+        application_date:
+          $ref: "#/components/schemas/ApplicationDate"
+          description: Omission or null stores no date, regardless of the initial stage.
+
+    StageEvent:
+      type: object
+      required: [id, from_stage, to_stage, changed_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        from_stage:
+          type: [string, "null"]
+          enum: [inbox, applied, interviewing, offer, rejected, closed, null]
+          description: Null for the starting event; otherwise the previous saved stage.
+        to_stage:
+          $ref: "#/components/schemas/Stage"
+        changed_at:
+          type: string
+          format: date-time
+          description: Automatically recorded UTC event time.
+
+    Tracking:
+      type: object
+      required:
+        - posting_id
+        - stage
+        - application_date
+        - created_at
+        - updated_at
+        - history
+      properties:
+        posting_id:
+          type: integer
+          format: int64
+          minimum: 1
+        stage:
+          $ref: "#/components/schemas/Stage"
+        application_date:
+          $ref: "#/components/schemas/ApplicationDate"
+        created_at:
+          type: [string, "null"]
+          format: date-time
+          description: Personal initialization time in UTC; null when untracked.
+        updated_at:
+          type: [string, "null"]
+          format: date-time
+          description: Last actual personal change in UTC; null when untracked.
+        history:
+          type: array
+          description: Starting and stage-change events ordered by increasing event ID.
+          items:
+            $ref: "#/components/schemas/StageEvent"
+
     PostingInput:
       type: object
       additionalProperties: false
@@ -432,6 +647,7 @@ components:
         - location
         - employment_type
         - workplace_arrangement
+        - stage
       properties:
         id:
           type: integer
@@ -447,6 +663,9 @@ components:
           $ref: "#/components/schemas/PostingInput/properties/employment_type"
         workplace_arrangement:
           $ref: "#/components/schemas/PostingInput/properties/workplace_arrangement"
+        stage:
+          $ref: "#/components/schemas/Stage"
+          description: Saved personal stage, or inbox when no tracking record exists.
 
     PostingList:
       type: object

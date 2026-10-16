@@ -63,6 +63,18 @@ func NewRouter(db *sql.DB, webDir string) http.Handler {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 	})
 
+	api.HandleFunc("GET /api/v1/postings/{id}/tracking", postings.getTracking)
+	api.HandleFunc("PATCH /api/v1/postings/{id}/tracking", postings.patchTracking)
+
+	api.HandleFunc("/api/v1/postings/{id}/tracking", func(
+		w http.ResponseWriter,
+		r *http.Request,
+	) {
+		w.Header().Set("Allow", "GET, HEAD, PATCH")
+		writeError(w, http.StatusMethodNotAllowed,
+			"method_not_allowed", "Method is not allowed.")
+	})
+
 	api.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeError(w, http.StatusMethodNotAllowed,

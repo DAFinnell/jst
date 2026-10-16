@@ -39,6 +39,7 @@ type postingSummaryResponse struct {
 	Location             *string `json:"location"`
 	EmploymentType       *string `json:"employment_type"`
 	WorkplaceArrangement *string `json:"workplace_arrangement"`
+	Stage                string  `json:"stage"`
 }
 
 type postingListResponse struct {
@@ -79,15 +80,15 @@ func toPostingResponse(saved posting.Posting) postingResponse {
 	}
 }
 
-func decodePostingInput(
+func decodePostingBody[T any](
 	w http.ResponseWriter,
 	r *http.Request,
-) (posting.Input, bool) {
+) (*T, bool) {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType,
 			"unsupported_media_type", "Use application/json for posting requests.")
-		return posting.Input{}, false
+		return nil, false
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxPostingBodyBytes)
@@ -96,22 +97,33 @@ func decodePostingInput(
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	var fields *postingFields
+	var fields *T
 	if err := decoder.Decode(&fields); err != nil {
 		writePostingBodyError(w, err)
-		return posting.Input{}, false
+		return nil, false
 	}
 	if fields == nil {
 		writePostingBodyError(w, nil)
-		return posting.Input{}, false
+		return nil, false
 	}
 
 	var extra json.RawMessage
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		writePostingBodyError(w, err)
-		return posting.Input{}, false
+		return nil, false
 	}
 
+	return fields, true
+}
+
+func decodePostingInput(
+	w http.ResponseWriter,
+	r *http.Request,
+) (posting.Input, bool) {
+	fields, ok := decodePostingBody[postingFields](w, r)
+	if !ok {
+		return posting.Input{}, false
+	}
 	return fields.toInput(), true
 }
 
@@ -174,12 +186,12 @@ func writePostingError(w http.ResponseWriter, err error) {
 }
 
 func (h postingHandler) create(w http.ResponseWriter, r *http.Request) {
-	input, ok := decodePostingInput(w, r)
+	input, ok := decodeCaptureInput(w, r)
 	if !ok {
 		return
 	}
 
-	saved, err := h.store.Create(r.Context(), input)
+	saved, err := h.store.Capture(r.Context(), input)
 	if err != nil {
 		writePostingError(w, err)
 		return
@@ -248,6 +260,7 @@ func (h postingHandler) list(w http.ResponseWriter, r *http.Request) {
 		Query:                query.Get("q"),
 		EmploymentType:       query.Get("employment_type"),
 		WorkplaceArrangement: query.Get("workplace_arrangement"),
+		Stage:                query.Get("stage"),
 	})
 	if err != nil {
 		writePostingError(w, err)
@@ -263,6 +276,7 @@ func (h postingHandler) list(w http.ResponseWriter, r *http.Request) {
 			Location:             summary.Location,
 			EmploymentType:       summary.EmploymentType,
 			WorkplaceArrangement: summary.WorkplaceArrangement,
+			Stage:                summary.Stage,
 		})
 	}
 
