@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Link,
   useNavigate,
@@ -11,6 +11,7 @@ import {
   PostingAPIError,
 } from '../api/postings'
 import type { Posting } from '../api/postings'
+import PostingTracking from "../components/PostingTracker"
 import {
   employmentTypeLabel,
   formatPostingDate,
@@ -40,18 +41,29 @@ type DeletionFocusTarget =
   | 'feedback'
   | null
 
+type TrackingSaveProps = {
+  trackingSaving: boolean
+  onTrackingSavingChange: (saving: boolean) => void
+}
+
 function PostingDetails({
   id,
   querySuffix,
   onRetry,
+  trackingSaving,
+  onTrackingSavingChange,
 }: {
   id: string | undefined
   querySuffix: string
   onRetry: () => void
-}) {
+} & TrackingSaveProps) {
   const [state, setState] = useState<PostingDetailState>(() =>
     id ? { status: 'loading' } : { status: 'invalid' },
   )
+
+  const handleMissing = useCallback(() => {
+    setState({ status: 'missing' })
+  }, [])
 
   useEffect(() => {
     if (!id) {
@@ -94,8 +106,10 @@ function PostingDetails({
       <PostingInformation
         posting={state.posting}
         querySuffix={querySuffix}
-        onMissing={() => setState({ status: 'missing' })}
+        onMissing={handleMissing}
         onReload={onRetry}
+        trackingSaving={trackingSaving}
+        onTrackingSavingChange={onTrackingSavingChange}
       />
     )
   }
@@ -138,12 +152,14 @@ function PostingInformation({
   querySuffix,
   onMissing,
   onReload,
+  trackingSaving,
+  onTrackingSavingChange,
 }: {
   posting: Posting
   querySuffix: string
   onMissing: () => void
   onReload: () => void
-}) {
+} & TrackingSaveProps) {
   const navigate = useNavigate()
   const [deletion, setDeletion] =
     useState<DeletionState>('idle')
@@ -171,6 +187,9 @@ function PostingInformation({
 
 
   function openConfirmation() {
+    if (trackingSaving) {
+      return
+    }
     setDeletion('confirming')
     setFocusTarget('cancel')
   }
@@ -181,7 +200,10 @@ function PostingInformation({
   }
 
   async function handleDelete() {
-    if (deletion !== 'confirming' || activeRequest.current) {
+    if (deletion !== 'confirming' ||
+      activeRequest.current ||
+      trackingSaving
+    ) {
       return
     }
 
@@ -234,7 +256,7 @@ function PostingInformation({
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
-        {deletion === 'deleting' ? (
+        {deletion === 'deleting' || trackingSaving ? (
           <span className="font-medium text-slate-500">
             Edit posting
           </span>
@@ -251,7 +273,7 @@ function PostingInformation({
           ref={deleteButtonRef}
           type="button"
           onClick={openConfirmation}
-          disabled={deletion !== 'idle'}
+          disabled={deletion !== 'idle' || trackingSaving}
           aria-expanded={deletion !== 'idle'}
           aria-controls={
             deletion === 'idle'
@@ -333,6 +355,12 @@ function PostingInformation({
         </section>
       )}
 
+      <PostingTracking
+        id={String(posting.id)}
+        disabled={deletion !== 'idle'}
+        onSavingChange={onTrackingSavingChange}
+        onMissing={onMissing}
+      />
       <dl className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:grid-cols-2">
         <div>
           <dt className="text-sm font-medium text-slate-600">Location</dt>
@@ -425,6 +453,7 @@ export default function PostingDetailPage() {
     readPostingQuery(params),
   )
   const [attempt, setAttempt] = useState(0)
+  const [trackingSaving, setTrackingSaving] = useState(false)
 
   return (
     <section className="space-y-6">
@@ -433,14 +462,22 @@ export default function PostingDetailPage() {
         id={id}
         querySuffix={querySuffix}
         onRetry={() => setAttempt((current) => current + 1)}
+        trackingSaving={trackingSaving}
+        onTrackingSavingChange={setTrackingSaving}
       />
 
-      <Link
-        to={`/postings${querySuffix}`}
-        className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-      >
-        Back to postings
-      </Link>
+      {trackingSaving ? (
+        <span className="inline-block font-medium text-slate-500">
+          Back to postings
+        </span>
+      ) : (
+        <Link
+          to={`/postings${querySuffix}`}
+          className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        >
+          Back to postings
+        </Link>
+      )}
     </section>
   )
 }
