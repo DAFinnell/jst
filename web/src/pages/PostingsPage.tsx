@@ -5,10 +5,15 @@ import {
   useNavigationType,
   useSearchParams,
 } from 'react-router'
-import { getPostings } from '../api/postings'
+import {
+  getPostings,
+  isPostingStage,
+  postingStages,
+} from '../api/postings'
 import type { PostingSummary } from '../api/postings'
 import {
   employmentTypeLabel,
+  postingStageLabel,
   workplaceArrangementLabel,
 } from '../postingDisplay'
 import {
@@ -112,21 +117,24 @@ function PostingsTable({
       tabIndex={0}
       className="max-w-full overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
     >
-      <table className="w-full min-w-[48rem] table-fixed bg-white text-left text-sm">
+      <table className="w-full min-w-[56rem] table-fixed bg-white text-left text-sm">
         <caption className="sr-only">Saved postings</caption>
 
         <thead className="bg-slate-100 text-slate-700">
           <tr>
-            <th scope="col" className="w-1/5 px-4 py-3 font-semibold">
+            <th scope="col" className="w-[18%] px-4 py-3 font-semibold">
               Company
             </th>
-            <th scope="col" className="w-[30%] px-4 py-3 font-semibold">
+            <th scope="col" className="w-[24%] px-4 py-3 font-semibold">
               Title
             </th>
-            <th scope="col" className="w-1/5 px-4 py-3 font-semibold">
+            <th scope="col" className="w-[13%] px-4 py-3 font-semibold">
+              Stage
+            </th>
+            <th scope="col" className="w-[17%] px-4 py-3 font-semibold">
               Location
             </th>
-            <th scope="col" className="w-[15%] px-4 py-3 font-semibold">
+            <th scope="col" className="w-[13%] px-4 py-3 font-semibold">
               Employment type
             </th>
             <th scope="col" className="w-[15%] px-4 py-3 font-semibold">
@@ -152,6 +160,10 @@ function PostingsTable({
                 >
                   {posting.title}
                 </Link>
+              </td>
+
+              <td className="wrap-anywhere px-4 py-3">
+                {postingStageLabel(posting.stage)}
               </td>
 
               <td className="wrap-anywhere px-4 py-3">
@@ -233,7 +245,7 @@ export default function PostingsPage() {
           event.preventDefault()
           applyQuery({ ...query, q: draft.text })
         }}
-        className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+        className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto]"
       >
         <div className="flex min-w-0 items-end gap-2">
           <label className="flex min-w-0 flex-1 flex-col gap-1">
@@ -259,6 +271,30 @@ export default function PostingsPage() {
             Search
           </button>
         </div>
+
+        <label className="flex min-w-0 flex-col gap-1">
+          <span className="text-sm font-medium">Stage</span>
+          <select
+            name="stage"
+            value={query.stage}
+            onChange={(event) => {
+              const stage = event.target.value
+
+              applyQuery(
+                { ...query, stage: isPostingStage(stage) ? stage : '' },
+                true,
+              )
+            }}
+            className={queryControlClass}
+          >
+            <option value="">All</option>
+            {postingStages.map((stage) => (
+              <option key={stage} value={stage}>
+                {postingStageLabel(stage)}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <label className="flex min-w-0 flex-col gap-1">
           <span className="text-sm font-medium">
@@ -318,6 +354,7 @@ export default function PostingsPage() {
           onClick={() =>
             applyQuery({
               q: '',
+              stage: '',
               employment_type: '',
               workplace_arrangement: '',
             })

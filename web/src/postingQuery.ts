@@ -1,10 +1,13 @@
+import { isPostingStage } from './api/postings'
 import type {
   EmploymentType,
+  PostingStage,
   WorkplaceArrangement,
 } from './api/postings'
 
 export type PostingQuery = {
   q: string
+  stage: PostingStage | ''
   employment_type: EmploymentType | 'unknown' | ''
   workplace_arrangement: WorkplaceArrangement | 'unknown' | ''
 }
@@ -14,9 +17,11 @@ export function readPostingQuery(
 ): PostingQuery {
   const employment = params.get('employment_type')
   const workplace = params.get('workplace_arrangement')
+  const stage = params.get('stage')
 
   return {
     q: (params.get('q') ?? '').trim(),
+    stage: isPostingStage(stage) ? stage : '',
     employment_type:
       employment === 'full_time' ||
         employment === 'other' ||
@@ -42,6 +47,10 @@ export function postingQueryParams(
 
   if (search) {
     params.set('q', search)
+  }
+
+  if (query.stage) {
+    params.set('stage', query.stage)
   }
 
   if (query.employment_type) {

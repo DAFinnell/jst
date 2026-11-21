@@ -106,7 +106,7 @@ function PostingDetails({
       <PostingInformation
         posting={state.posting}
         querySuffix={querySuffix}
-        onMissing={() => setState({ status: 'missing' })}
+        onMissing={handleMissing}
         onReload={onRetry}
         trackingSaving={trackingSaving}
         onTrackingSavingChange={onTrackingSavingChange}
@@ -478,13 +478,6 @@ export default function PostingDetailPage() {
           Back to postings
         </Link>
       )}
-
-      <Link
-        to={`/postings${querySuffix}`}
-        className="inline-block font-medium text-blue-700 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-      >
-        Back to postings
-      </Link>
     </section>
   )
 }
